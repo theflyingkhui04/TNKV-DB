@@ -1,6 +1,25 @@
 from fastapi import APIRouter
-from core.contracts import *
+from typing import List
+import time
+
+from core.contracts import UpsertRequest
+from core.ingestion.pipeline import process_and_ingest
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
-# TODO: Thêm các endpoint cho Ingestion ở đây
+class IngestionResponse(BaseModel):
+    success_count: int
+    execution_time_ms: float
+    message: str
+
+@router.post("/bulk", response_model=IngestionResponse)
+def bulk_ingest(documents: List[UpsertRequest]):
+    start_time = time.time()
+    success_count = process_and_ingest(documents)
+    execution_time = (time.time() - start_time) * 1000  # Đổi ra milliseconds
+    return IngestionResponse(
+        success_count=success_count,
+        execution_time_ms=execution_time,
+        message="Dữ liệu đã được nạp và lập chỉ mục thành công."
+    )
