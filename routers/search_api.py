@@ -1,7 +1,7 @@
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from core.contracts import SearchResponse, SearchResultItem
 from core.ingestion.indexer import global_index
@@ -45,3 +45,16 @@ def search_documents(
         results=items,
         execution_time_ms=round(elapsed, 2),
     )
+
+
+@router.get("/collections/{name}/documents/{doc_id}")
+def get_document(name: str, doc_id: str) -> Dict[str, Any]:
+    """Lấy nội dung gốc của tài liệu theo doc_id."""
+    doc = global_index.documents.get(doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found")
+    return {
+        "doc_id": doc.doc_id,
+        "content": doc.content,
+        "metadata": doc.metadata,
+    }
