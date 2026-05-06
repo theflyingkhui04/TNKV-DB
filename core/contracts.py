@@ -3,10 +3,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 
-# ==========================================
-# 1. FASTAPI SCHEMAS (PYDANTIC MODELS)
-# ==========================================
 
+# 1. FASTAPI SCHEMAS (PYDANTIC MODELS)
 class UpsertRequest(BaseModel):
     """Schema cho request thêm mới văn bản vào hệ thống."""
     doc_id: str = Field(..., description="Mã định danh của văn bản")
@@ -24,6 +22,7 @@ class SmartSearchRequest(SearchRequest):
     """Schema cho request tìm kiếm nâng cao (kế thừa SearchRequest)."""
     use_spell_check: bool = Field(False, description="Bật tính năng sửa lỗi chính tả truy vấn")
     use_rocchio: bool = Field(False, description="Bật tính năng mở rộng truy vấn (Rocchio)")
+    positive_feedback_ids: List[str] = Field(default_factory=list, description="Danh sách ID tài liệu phản hồi tích cực")
 
 
 class SearchResultItem(BaseModel):
@@ -42,10 +41,8 @@ class SearchResponse(BaseModel):
     corrected_query: Optional[str] = Field(None, description="Truy vấn sau khi sửa lỗi chính tả (nếu có)")
 
 
-# ==========================================
-# 2. DATA CLASSES (INTERNAL STRUCTURES)
-# ==========================================
 
+# 2. DATA CLASSES (INTERNAL STRUCTURES)
 @dataclass
 class Document:
     """Cấu trúc lưu trữ nội bộ cho một văn bản."""
@@ -75,10 +72,8 @@ class PostingsList:
     encoded_payload: Optional[bytes] = None
 
 
-# ==========================================
-# 3. INTERFACES (ABSTRACT BASE CLASSES)
-# ==========================================
 
+# 3. INTERFACES (ABSTRACT BASE CLASSES)
 class BaseInvertedIndex(ABC):
     """
     Interface bắt buộc cho Inverted Index.
