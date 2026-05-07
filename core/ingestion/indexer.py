@@ -39,14 +39,25 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
     def get_total_documents(self) -> int:
         return self.total_documents
 
+
+    def compress_postings_vbyte(self, index: Dict[str, PostingsList]) -> Dict[str, bytes]:
+        # --- VIẾT CODE CỦA BẠN Ở ĐÂY ---
+        return index
+
+    def decompress_postings_vbyte(self, compressed_data: Dict) -> Dict[str, PostingsList]:
+        # --- VIẾT CODE CỦA BẠN Ở ĐÂY ---
+        return compressed_data
+        
     def save_to_disk(self, directory_path: str) -> None:
         os.makedirs(directory_path, exist_ok=True)
         file_path = os.path.join(directory_path, "index.pkl")
         
+        compressed_index = self.compress_postings_vbyte(self.index)
+        
         with open(file_path, "wb") as f:
             pickle.dump({
                 "documents": self.documents,
-                "index": self.index,
+                "index": compressed_index,
                 "total_documents": self.total_documents
             }, f)
 
@@ -55,8 +66,10 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
         if os.path.exists(file_path):
             with open(file_path, "rb") as f:
                 data = pickle.load(f)
-                self.documents = data["documents"]
-                self.index = data["index"]
-                self.total_documents = data["total_documents"]
+                
+                self.documents = data.get("documents", {})
+                self.total_documents = data.get("total_documents", 0)
+                
+                self.index = self.decompress_postings_vbyte(data.get("index", {}))
 
 global_index = InMemoryInvertedIndex()
