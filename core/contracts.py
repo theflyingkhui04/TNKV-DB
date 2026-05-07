@@ -16,6 +16,7 @@ class SearchRequest(BaseModel):
     """Schema cho request tìm kiếm cơ bản."""
     query: str = Field(..., description="Chuỗi truy vấn từ người dùng")
     top_k: int = Field(10, ge=1, le=100, description="Số lượng kết quả trả về tối đa")
+    ranker: str = Field("tfidf", description="Thuật toán xếp hạng (tfidf, bm25, bm25+)")
 
 
 class SmartSearchRequest(SearchRequest):
@@ -29,7 +30,8 @@ class SearchResultItem(BaseModel):
     """Schema cho một phần tử kết quả tìm kiếm."""
     doc_id: str = Field(..., description="Mã định danh của văn bản")
     score: float = Field(..., description="Điểm độ tương đồng (Cosine Similarity)")
-    content: Optional[str] = Field(None, description="Trích đoạn hoặc nội dung văn bản (tuỳ chọn)")
+    content: Optional[str] = Field(None, description="Nội dung văn bản (tuỳ chọn)")
+    snippet: Optional[str] = Field(None, description="Đoạn trích chứa từ khóa được highlight")
 
 
 class SearchResponse(BaseModel):
@@ -72,6 +74,15 @@ class PostingsList:
     encoded_payload: Optional[bytes] = None
 
 
+@dataclass
+class DictionaryEntry:
+    """Cấu trúc ánh xạ từ vựng trên RAM tới file Postings trên ổ cứng (Task Disk-based Indexing)."""
+    term: str
+    document_frequency: int
+    offset: int
+    length: int
+
+
 
 # 3. INTERFACES (ABSTRACT BASE CLASSES)
 class BaseInvertedIndex(ABC):
@@ -101,11 +112,21 @@ class BaseInvertedIndex(ABC):
         pass
 
     @abstractmethod
+    def get_vocabulary(self) -> List[str]:
+        """Trả về danh sách toàn bộ từ vựng (dùng cho Spell Checker/Trigram)."""
+        pass
+
+    @abstractmethod
     def save_to_disk(self, directory_path: str) -> None:
-        """Lưu cấu trúc index xuống đĩa cứng (serialize thành file, nén Variable Byte)."""
+        """Lưu cấu trúc index xuống đĩa cứng (thành Block offset cho Disk-based)."""
         pass
 
     @abstractmethod
     def load_from_disk(self, directory_path: str) -> None:
-        """Tải cấu trúc index từ đĩa cứng lên RAM."""
+        """Tải cấu trúc index từ đĩa cứng (tải Dictionary lên RAM, mở file Postings)."""
+        pass
+
+    @abstractmethod
+    def close(self) -> None:
+        """Đóng các file pointer khi kết thúc (dùng cho Disk-based Indexing)."""
         pass
