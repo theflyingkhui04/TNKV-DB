@@ -23,7 +23,8 @@ def smart_search(req: SmartSearchRequest):
     
     if req.use_spell_check:
         vocab = set(vectorizer.vocabulary.keys())
-        corrected_tokens, was_corrected = correct_query(query_tokens, vocab)
+        trigram_idx = global_index.trigram_index
+        corrected_tokens, was_corrected = correct_query(query_tokens, vocab, trigram_idx)
         if was_corrected:
             query_tokens = corrected_tokens
             corrected_query_str = " ".join(corrected_tokens)

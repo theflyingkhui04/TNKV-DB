@@ -9,6 +9,7 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
         self.documents: Dict[str, Document] = {}
         self.index: Dict[str, PostingsList] = {}
         self.total_documents = 0
+        self.trigram_index: Dict[str, set] = {}
 
     def add_document(self, doc: Document) -> None:
         self.documents[doc.doc_id] = doc
@@ -27,6 +28,19 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
                 new_posting = Posting(doc_id=doc.doc_id, frequency=1, positions=[position])
                 postings_list.postings.append(new_posting)
                 postings_list.document_frequency += 1
+                
+            # Cập nhật Trigram Index cho từ vựng mới
+            if len(term) == 1:
+                tgs = [f"${term}$"]
+            elif len(term) > 1:
+                padded = f"${term}$"
+                tgs = [padded[i:i+3] for i in range(len(padded) - 2)]
+            else:
+                tgs = []
+            for tg in tgs:
+                if tg not in self.trigram_index:
+                    self.trigram_index[tg] = set()
+                self.trigram_index[tg].add(term)
 
     def get_postings(self, term: str) -> Optional[PostingsList]:
         return self.index.get(term)
@@ -38,6 +52,9 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
 
     def get_total_documents(self) -> int:
         return self.total_documents
+
+    def get_vocabulary(self) -> list:
+        return list(self.index.keys())
 
 
     def compress_postings_vbyte(self, index: Dict[str, PostingsList]) -> Dict[str, bytes]:
@@ -58,7 +75,8 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
             pickle.dump({
                 "documents": self.documents,
                 "index": compressed_index,
-                "total_documents": self.total_documents
+                "total_documents": self.total_documents,
+                "trigram_index": self.trigram_index
             }, f)
 
     def load_from_disk(self, directory_path: str) -> None:
@@ -71,5 +89,6 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
                 self.total_documents = data.get("total_documents", 0)
                 
                 self.index = self.decompress_postings_vbyte(data.get("index", {}))
+                self.trigram_index = data.get("trigram_index", {})
 
 global_index = InMemoryInvertedIndex()
