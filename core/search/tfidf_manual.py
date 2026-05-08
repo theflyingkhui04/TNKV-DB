@@ -29,7 +29,7 @@ class ManualTfIdfVectorizer(BaseVectorizer):
         # 1. Vocabulary: sort terms để kết quả xác định
         self._vocabulary = {
             term: idx
-            for idx, term in enumerate(sorted(index.index.keys()))
+            for idx, term in enumerate(sorted(index.get_vocabulary()))
         }
         vocab_size = len(self._vocabulary)
         total_docs = index.get_total_documents()
