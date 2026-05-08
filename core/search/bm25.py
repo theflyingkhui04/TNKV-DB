@@ -32,7 +32,7 @@ class BM25Vectorizer(BaseVectorizer):
 
     def build_vectors(self, index) -> None:
         self._vocabulary = {
-            t: i for i, t in enumerate(sorted(index.index.keys()))
+            t: i for i, t in enumerate(sorted(index.get_vocabulary()))
         }
         vocab_size = len(self._vocabulary)
         total_docs = index.get_total_documents()
