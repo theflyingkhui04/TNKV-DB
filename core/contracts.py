@@ -37,6 +37,7 @@ class SearchResultItem(BaseModel):
 class SearchResponse(BaseModel):
     """Schema cho response trả về của API tìm kiếm."""
     query: str = Field(..., description="Truy vấn đã được sử dụng (có thể đã qua sửa lỗi)")
+    algorithm: str = Field("tf-idf", description="Thuật toán xếp hạng đang dùng")
     total_found: int = Field(..., description="Tổng số lượng văn bản tìm thấy có chứa các terms")
     results: List[SearchResultItem] = Field(default_factory=list, description="Danh sách Top-K kết quả")
     execution_time_ms: float = Field(..., description="Thời gian thực thi tìm kiếm (tính bằng ms)")
