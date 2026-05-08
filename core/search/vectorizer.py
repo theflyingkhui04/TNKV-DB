@@ -42,6 +42,11 @@ class BaseVectorizer(ABC):
         """Danh sách doc_id tương ứng với các hàng trong tfidf_matrix."""
         pass
 
+    @property
+    def algorithm_name(self) -> str:
+        """Tên thuật toán xếp hạng đang dùng."""
+        return "unknown"
+
 
 def get_vectorizer(mode: str = "manual") -> BaseVectorizer:
     """Factory tạo vectorizer theo mode."""
@@ -51,5 +56,11 @@ def get_vectorizer(mode: str = "manual") -> BaseVectorizer:
     elif mode == "sklearn":
         from .tfidf_sklearn import SklearnTfIdfVectorizer
         return SklearnTfIdfVectorizer()
+    elif mode == "bm25":
+        from .bm25 import BM25Vectorizer
+        return BM25Vectorizer()
+    elif mode == "bm25+":
+        from .bm25 import BM25PlusVectorizer
+        return BM25PlusVectorizer()
     else:
-        raise ValueError(f"Unknown vectorizer mode: {mode}. Use 'manual' or 'sklearn'.")
+        raise ValueError(f"Unknown vectorizer mode: {mode}. Use 'manual', 'sklearn', 'bm25', or 'bm25+'.")

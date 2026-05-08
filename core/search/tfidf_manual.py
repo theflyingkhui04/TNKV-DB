@@ -95,6 +95,10 @@ class ManualTfIdfVectorizer(BaseVectorizer):
     # ---- properties ----
 
     @property
+    def algorithm_name(self) -> str:
+        return "tf-idf"
+
+    @property
     def vocabulary(self) -> Dict[str, int]:
         return self._vocabulary
 

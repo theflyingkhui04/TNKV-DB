@@ -10,27 +10,29 @@ from core.search.ranker import search as ranker_search
 
 router = APIRouter(prefix="/search", tags=["search"])
 
+VALID_ALGORITHMS = {"manual", "sklearn", "bm25", "bm25+"}
+
 
 @router.get("/collections/{name}", response_model=SearchResponse)
 def search_documents(
     name: str,
     q: str = Query(..., description="Câu truy vấn tìm kiếm"),
     top_k: int = Query(10, ge=1, le=100, description="Số kết quả trả về"),
+    algorithm: str = Query("manual", description=f"Thuật toán xếp hạng: {', '.join(sorted(VALID_ALGORITHMS))}"),
 ):
-    """Tìm kiếm tài liệu theo TF-IDF + Cosine Similarity, trả về Top-K."""
+    """Tìm kiếm tài liệu theo TF-IDF/BM25 + Cosine Similarity, trả về Top-K."""
+    if algorithm not in VALID_ALGORITHMS:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"Invalid algorithm '{algorithm}'. Use one of: {VALID_ALGORITHMS}")
+
     start = time.time()
 
-    # Vectorizer build trên index hiện tại
-    vectorizer = get_vectorizer("manual")
+    vectorizer = get_vectorizer(algorithm)
     vectorizer.build_vectors(global_index)
 
-    # Tokenize query giống ingestion pipeline
     query_tokens = q.lower().split()
-
-    # Search: vectorize → cosine → min-heap top-K
     results = ranker_search(vectorizer, query_tokens, top_k=top_k)
 
-    # Ghép content gốc từ index
     items = []
     for doc_id, score in results:
         doc = global_index.documents.get(doc_id)
@@ -41,6 +43,7 @@ def search_documents(
 
     return SearchResponse(
         query=q,
+        algorithm=vectorizer.algorithm_name,
         total_found=len(results),
         results=items,
         execution_time_ms=round(elapsed, 2),
