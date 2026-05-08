@@ -19,15 +19,47 @@ def edit_distance(source: str, target: str) -> int:
                 dp[i][j] = min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]) + 1
     return dp[m][n]
 
+def generate_trigrams(word: str) -> List[str]:
+    if len(word) == 0:
+        return []
+    if len(word) == 1:
+        return [f"${word}$"]
+    padded = f"${word}$"
+    return [padded[i:i+3] for i in range(len(padded) - 2)]
+
+def get_candidates(word: str, trigram_index: dict, top_k: int = 100) -> Set[str]:
+    trigrams = generate_trigrams(word)
+    trigram_count = len(trigrams)
+    if trigram_count == 0:
+        return set()
+    
+    match_counts = {}
+    for tg in trigrams:
+        if tg in trigram_index:
+            for vocab_word in trigram_index[tg]:
+                match_counts[vocab_word] = match_counts.get(vocab_word, 0) + 1
+                
+    candidates_scores = []
+    for vocab_word, match in match_counts.items():
+        vocab_trigram_count = len(vocab_word) if len(vocab_word) > 1 else 1
+        jaccard = match / (trigram_count + vocab_trigram_count - match)
+        candidates_scores.append((jaccard, vocab_word))
+        
+    candidates_scores.sort(key=lambda x: x[0], reverse=True)
+    return {word for _, word in candidates_scores[:top_k]}
+
 def find_closest_term(
     word: str,
     vocabulary: Set[str],
+    trigram_index: dict,
     max_distance: int = 2,
 ) -> Optional[str]:
     best_word = None
     best_dist = max_distance + 1
 
-    for candidate in vocabulary:
+    candidates = get_candidates(word, trigram_index, top_k=100)
+
+    for candidate in candidates:
         if abs(len(candidate) - len(word)) > max_distance:
             continue
         dist = edit_distance(word, candidate)
@@ -40,6 +72,7 @@ def find_closest_term(
 def correct_query(
     query_tokens: List[str],
     vocabulary: Set[str],
+    trigram_index: dict,
     max_distance: int = 2,
 ) -> Tuple[List[str], bool]:
     corrected_tokens = []
@@ -49,7 +82,7 @@ def correct_query(
         if token in vocabulary:
             corrected_tokens.append(token)
         else:
-            suggestion = find_closest_term(token, vocabulary, max_distance)
+            suggestion = find_closest_term(token, vocabulary, trigram_index, max_distance)
             if suggestion is not None:
                 corrected_tokens.append(suggestion)
                 was_corrected = True
