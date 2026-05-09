@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from routers import ingestion_api, search_api, smart_api
 from core.ingestion.indexer import global_index
@@ -22,6 +23,15 @@ app = FastAPI(
     description="Vector Database thưa do nhóm của Khôi, Nhật, Tùng làm trong môn IR",
     version="1.0.0",
     lifespan=lifespan
+)
+
+# Cấu hình CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Cho phép tất cả origin, có thể thay bằng ["http://localhost:3000"] cho production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(ingestion_api.router)
