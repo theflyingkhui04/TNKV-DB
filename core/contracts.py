@@ -2,9 +2,171 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
+from enum import Enum
+import datetime
 
 
+# ===========================================================================
+# 0. COLLECTION  —  Không gian lưu trữ độc lập
+# ===========================================================================
+
+class CollectionStatus(str, Enum):
+    """Trạng thái vòng đời của một Collection."""
+    ACTIVE   = "active"    # Đang hoạt động bình thường
+    BUILDING = "building"  # Đang được index / re-index
+    READONLY = "readonly"  # Chỉ đọc (đang backup / migrate)
+    DELETED  = "deleted"   # Đã xoá mềm, chờ dọn dẹp
+
+
+@dataclass
+class CollectionConfig:
+    """
+    Cấu hình khởi tạo cho một Collection.
+
+    Tất cả tham số đều có giá trị mặc định hợp lý — người dùng chỉ cần
+    truyền ``name`` là đủ để tạo một collection hoạt động được.
+    """
+    # Thuật toán xếp hạng mặc định cho Collection này
+    default_ranker: str = "tfidf"          # "tfidf" | "bm25" | "bm25+"
+
+    # BM25 hyperparameters (bỏ qua nếu ranker là tfidf)
+    bm25_k1: float = 1.5
+    bm25_b:  float = 0.75
+
+    # Giới hạn kích thước
+    max_documents: Optional[int] = None    # None = không giới hạn
+
+    # Lưu trữ
+    persist_on_disk: bool = True           # False = in-memory only
+    index_directory: Optional[str] = None  # None = tự sinh từ collection name
+
+    # Pipeline tiền xử lý
+    use_spell_check: bool = False
+    use_stopword_filter: bool = True
+    language: str = "vi"                   # "vi" | "en" | "mixed"
+
+
+@dataclass
+class CollectionStats:
+    """Thống kê runtime của một Collection (chỉ đọc, được cập nhật tự động)."""
+    total_documents: int = 0
+    total_terms: int = 0                   # Kích thước từ điển (vocabulary size)
+    avg_document_length: float = 0.0       # Trung bình số token/document
+    index_size_bytes: int = 0              # Dung lượng index trên đĩa
+    last_updated: Optional[datetime.datetime] = None
+
+
+@dataclass
+class Collection:
+    """
+    Không gian lưu trữ độc lập — đơn vị quản lý cấp cao nhất của TNKV-DB.
+
+    Mỗi Collection bao gồm:
+      - Danh sách Document riêng biệt
+      - Inverted Index riêng biệt (tách biệt hoàn toàn với các Collection khác)
+      - Cấu hình và thống kê của riêng nó
+
+    Ví dụ sử dụng:
+        col = Collection(
+            name="legal_docs",
+            description="Văn bản pháp luật Việt Nam",
+            config=CollectionConfig(default_ranker="bm25", language="vi"),
+        )
+    """
+    name: str
+    description: str = ""
+    config: CollectionConfig = field(default_factory=CollectionConfig)
+    stats: CollectionStats = field(default_factory=CollectionStats)
+    status: CollectionStatus = CollectionStatus.ACTIVE
+    created_at: datetime.datetime = field(default_factory=datetime.datetime.utcnow)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas dành cho Collection API endpoints
+# ---------------------------------------------------------------------------
+
+class CreateCollectionRequest(BaseModel):
+    """Schema cho request tạo Collection mới."""
+    name: str = Field(..., min_length=1, max_length=128,
+                      pattern=r"^[a-zA-Z0-9_\-]+$",
+                      description="Tên định danh duy nhất (chỉ chữ/số/gạch)")
+    description: str = Field("", description="Mô tả ngắn về Collection")
+    default_ranker: str = Field("tfidf", description="Thuật toán xếp hạng mặc định")
+    persist_on_disk: bool = Field(True, description="Lưu index xuống đĩa hay không")
+    language: str = Field("vi", description="Ngôn ngữ chủ đạo (vi/en/mixed)")
+    max_documents: Optional[int] = Field(None, ge=1,
+                                         description="Giới hạn số document tối đa")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict,
+                                               description="Metadata tuỳ chọn")
+
+
+class CollectionInfoResponse(BaseModel):
+    """Schema cho response thông tin một Collection."""
+    name: str
+    description: str
+    status: str
+    default_ranker: str
+    language: str
+    total_documents: int
+    total_terms: int
+    avg_document_length: float
+    index_size_bytes: int
+    last_updated: Optional[str] = None
+    created_at: str
+
+
+class ListCollectionsResponse(BaseModel):
+    """Schema cho response danh sách Collections."""
+    total: int = Field(..., description="Tổng số Collection hiện có")
+    collections: List[CollectionInfoResponse] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Interface bắt buộc cho Collection Manager
+# ---------------------------------------------------------------------------
+
+class BaseCollectionManager(ABC):
+    """
+    Interface quản lý vòng đời Collection.
+    Storage layer implement class này; API layer gọi các method này.
+    """
+
+    @abstractmethod
+    def create_collection(self, request: CreateCollectionRequest) -> Collection:
+        """Tạo và đăng ký một Collection mới."""
+        pass
+
+    @abstractmethod
+    def get_collection(self, name: str) -> Optional[Collection]:
+        """Lấy Collection theo tên. Trả về None nếu không tồn tại."""
+        pass
+
+    @abstractmethod
+    def list_collections(self) -> List[Collection]:
+        """Liệt kê tất cả Collection đang ACTIVE."""
+        pass
+
+    @abstractmethod
+    def delete_collection(self, name: str) -> bool:
+        """Xoá mềm một Collection. Trả về True nếu thành công."""
+        pass
+
+    @abstractmethod
+    def update_stats(self, name: str, stats: CollectionStats) -> None:
+        """Cập nhật thống kê runtime sau mỗi lần upsert / re-index."""
+        pass
+
+    @abstractmethod
+    def collection_exists(self, name: str) -> bool:
+        """Kiểm tra nhanh xem Collection có tồn tại không."""
+        pass
+
+
+# ===========================================================================
 # 1. FASTAPI SCHEMAS (PYDANTIC MODELS)
+# ===========================================================================
+
 class UpsertRequest(BaseModel):
     """Schema cho request thêm mới văn bản vào hệ thống."""
     doc_id: str = Field(..., description="Mã định danh của văn bản")
@@ -44,8 +206,10 @@ class SearchResponse(BaseModel):
     corrected_query: Optional[str] = Field(None, description="Truy vấn sau khi sửa lỗi chính tả (nếu có)")
 
 
-
+# ===========================================================================
 # 2. DATA CLASSES (INTERNAL STRUCTURES)
+# ===========================================================================
+
 @dataclass
 class Document:
     """Cấu trúc lưu trữ nội bộ cho một văn bản."""
@@ -70,7 +234,7 @@ class PostingsList:
     term: str
     document_frequency: int = 0
     postings: List[Posting] = field(default_factory=list)
-    
+
     # Payload đã nén bằng Variable Byte
     encoded_payload: Optional[bytes] = None
 
@@ -84,8 +248,10 @@ class DictionaryEntry:
     length: int
 
 
-
+# ===========================================================================
 # 3. INTERFACES (ABSTRACT BASE CLASSES)
+# ===========================================================================
+
 class BaseInvertedIndex(ABC):
     """
     Interface bắt buộc cho Inverted Index.
