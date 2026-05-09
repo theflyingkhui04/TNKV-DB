@@ -227,8 +227,7 @@ class TestProcess:
 
     def test_pipeline_long_text(self, prep):
         text = (
-            "Hệ thống t            git add core/ingestion/preprocessor.py
-            git commit -m "Mô tả thay đổi của bạn"ìm kiếm thông tin (Information Retrieval) là một lĩnh vực "
+            "Hệ thống tìm kiếm thông tin (Information Retrieval) là một lĩnh vực "
             "nghiên cứu trong khoa học máy tính, tập trung vào việc tổ chức, "
             "lưu trữ và truy xuất thông tin từ các kho văn bản lớn. "
             "Các thuật toán như TF-IDF và BM25 được sử dụng rộng rãi."
