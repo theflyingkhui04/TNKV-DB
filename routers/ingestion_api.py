@@ -23,3 +23,30 @@ def bulk_ingest(documents: List[UpsertRequest]):
         execution_time_ms=execution_time,
         message="Dữ liệu đã được nạp và lập chỉ mục thành công."
     )
+
+@router.delete("/clear", response_model=IngestionResponse)
+def clear_database():
+    start_time = time.time()
+    
+    # Reset in-memory structures
+    from core.ingestion.indexer import global_index
+    global_index.clear()
+    
+    # Remove files from disk (optional but good for completely dropping DB)
+    import os
+    storage_dir = "storage"
+    if os.path.exists(storage_dir):
+        for filename in os.listdir(storage_dir):
+            file_path = os.path.join(storage_dir, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                pass
+                
+    execution_time = (time.time() - start_time) * 1000
+    return IngestionResponse(
+        success_count=0,
+        execution_time_ms=execution_time,
+        message="Toàn bộ Database đã được dọn sạch thành công."
+    )

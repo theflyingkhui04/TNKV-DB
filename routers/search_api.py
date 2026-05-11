@@ -7,6 +7,7 @@ from core.contracts import SearchResponse, SearchResultItem
 from core.ingestion.indexer import global_index
 from core.search.vectorizer import get_vectorizer
 from core.search.ranker import search as ranker_search
+from core.search.utils import extract_snippet
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -30,14 +31,18 @@ def search_documents(
     vectorizer = get_vectorizer(algorithm)
     vectorizer.build_vectors(global_index)
 
-    query_tokens = q.lower().split()
+    from core.search.utils import tokenize
+    query_tokens = tokenize(q)
     results = ranker_search(vectorizer, query_tokens, top_k=top_k)
 
     items = []
     for doc_id, score in results:
         doc = global_index.documents.get(doc_id)
         content = doc.content if doc else None
-        items.append(SearchResultItem(doc_id=doc_id, score=round(score, 4), content=content))
+        
+        snippet = extract_snippet(content, query_tokens) if content else None
+        
+        items.append(SearchResultItem(doc_id=doc_id, score=round(score, 4), content=content, snippet=snippet))
 
     elapsed = (time.time() - start) * 1000
 
@@ -60,4 +65,45 @@ def get_document(name: str, doc_id: str) -> Dict[str, Any]:
         "doc_id": doc.doc_id,
         "content": doc.content,
         "metadata": doc.metadata,
+    }
+
+@router.get("/debug/stats")
+def get_db_stats() -> Dict[str, Any]:
+    """Lấy thống kê tổng quan của Database (dùng cho UI Khám phá)."""
+    vocab = global_index.get_vocabulary()
+    return {
+        "total_documents": global_index.get_total_documents(),
+        "vocabulary_size": len(vocab),
+        "vocabulary_sample": vocab[:50]  # Trả về 50 từ khóa đầu tiên để preview
+    }
+
+@router.get("/debug/postings/{term}")
+def get_term_postings(term: str) -> Dict[str, Any]:
+    """Xem chi tiết Postings List và Dictionary Entry của một từ khóa."""
+    term = term.lower()
+    postings_list = global_index.get_postings(term)
+    
+    if postings_list is None or not postings_list.postings:
+        raise HTTPException(status_code=404, detail=f"Term '{term}' not found in index")
+        
+    entry = global_index.dictionary.get(term)
+    disk_info = None
+    if entry:
+        disk_info = {
+            "offset": entry.offset,
+            "length_bytes": entry.length
+        }
+        
+    return {
+        "term": term,
+        "document_frequency": postings_list.document_frequency,
+        "disk_storage": disk_info,
+        "postings": [
+            {
+                "doc_id": p.doc_id,
+                "frequency": p.frequency,
+                "positions": p.positions
+            }
+            for p in postings_list.postings
+        ]
     }

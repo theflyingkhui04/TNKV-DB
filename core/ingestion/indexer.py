@@ -4,6 +4,7 @@ import threading
 from typing import Dict, Optional
 
 from core.contracts import BaseInvertedIndex, Document, PostingsList, Posting, DictionaryEntry
+from core.ingestion.compression import gap_encode, gap_decode, vb_encode, vb_decode
 
 class InMemoryInvertedIndex(BaseInvertedIndex):
     def __init__(self):
@@ -14,6 +15,17 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
         self.trigram_index: Dict[str, set] = {}
         self.postings_file = None
         self.postings_lock = threading.Lock()
+
+    def clear(self) -> None:
+        with self.postings_lock:
+            self.documents.clear()
+            self.index.clear()
+            self.dictionary.clear()
+            self.total_documents = 0
+            self.trigram_index.clear()
+            if self.postings_file:
+                self.postings_file.close()
+                self.postings_file = None
 
     def add_document(self, doc: Document) -> None:
         self.documents[doc.doc_id] = doc
@@ -57,8 +69,36 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
                 payload = self.postings_file.read(entry.length)
             
             try:
-                # Decode (pickle)
-                return pickle.loads(payload)
+                # Decode
+                data = pickle.loads(payload)
+                if isinstance(data, dict):
+                    postings = []
+                    
+                    if "doc_ids_bytes" in data and data["doc_ids_bytes"] is not None:
+                        # Dữ liệu đã được nén
+                        gaps = vb_decode(data["doc_ids_bytes"])
+                        doc_ids = gap_decode(gaps)
+                        for i in range(len(doc_ids)):
+                            postings.append(Posting(
+                                doc_id=str(doc_ids[i]),
+                                frequency=data["frequencies"][i],
+                                positions=data["positions_list"][i]
+                            ))
+                    else:
+                        # Dữ liệu không nén được (ví dụ doc_id là chữ 'D01')
+                        for i in range(len(data["uncompressed_doc_ids"])):
+                            postings.append(Posting(
+                                doc_id=data["uncompressed_doc_ids"][i],
+                                frequency=data["frequencies"][i],
+                                positions=data["positions_list"][i]
+                            ))
+                            
+                    return PostingsList(
+                        term=data["term"],
+                        document_frequency=data["df"],
+                        postings=postings
+                    )
+                return data
             except Exception:
                 return None
                 
@@ -81,14 +121,56 @@ class InMemoryInvertedIndex(BaseInvertedIndex):
 
 
     def compress_postings_vbyte(self, index: Dict[str, PostingsList]) -> Dict[str, bytes]:
-        # --- VIẾT CODE CỦA BẠN Ở ĐÂY ---
-        return index
+        compressed_index = {}
+        for term, postings_list in index.items():
+            doc_ids = []
+            frequencies = []
+            positions_list = []
+            uncompressed_doc_ids = []
+            
+            can_compress = all(p.doc_id.isdigit() for p in postings_list.postings)
+            
+            # Sắp xếp postings theo doc_id tăng dần để Gap Encoding hoạt động đúng (không sinh số âm)
+            if can_compress:
+                sorted_postings = sorted(postings_list.postings, key=lambda p: int(p.doc_id))
+            else:
+                # Nếu không nén bằng số, có thể sort theo chuỗi để đảm bảo tính nhất quán (tuỳ chọn)
+                sorted_postings = sorted(postings_list.postings, key=lambda p: p.doc_id)
+                
+            for p in sorted_postings:
+                if can_compress:
+                    doc_ids.append(int(p.doc_id))
+                uncompressed_doc_ids.append(p.doc_id)
+                frequencies.append(p.frequency)
+                positions_list.append(p.positions)
+                
+            doc_ids_bytes = None
+            if can_compress:
+                # Nén doc_ids bằng Gap Encoding + Variable Byte
+                gaps = gap_encode(doc_ids)
+                doc_ids_bytes = vb_encode(gaps)
+            
+            # Đóng gói các metadata khác cùng với bytes đã nén (hoặc không nén)
+            payload = pickle.dumps({
+                "term": term,
+                "df": postings_list.document_frequency,
+                "doc_ids_bytes": doc_ids_bytes,
+                "uncompressed_doc_ids": [] if can_compress else uncompressed_doc_ids,
+                "frequencies": frequencies,
+                "positions_list": positions_list
+            })
+            compressed_index[term] = payload
+            
+        return compressed_index
 
     def decompress_postings_vbyte(self, compressed_data: Dict) -> Dict[str, PostingsList]:
-        # --- VIẾT CODE CỦA BẠN Ở ĐÂY ---
-        return compressed_data
+        # Hàm này dùng nếu ta load toàn bộ vào RAM (không bắt buộc với Block Offset hiện tại)
+        pass
         
     def save_to_disk(self, directory_path: str) -> None:
+        if not self.index:
+            return  # Không có gì trên RAM để lưu, bỏ qua để tránh xóa trắng disk
+            
         os.makedirs(directory_path, exist_ok=True)
         
         if self.postings_file:
