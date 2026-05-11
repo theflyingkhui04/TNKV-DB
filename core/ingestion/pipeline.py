@@ -7,8 +7,8 @@ def process_and_ingest(requests: List[UpsertRequest]) -> int:
     
     for req in requests:
         try:
-            raw_text = req.content.lower()
-            tokens = raw_text.split()
+            from core.search.utils import tokenize
+            tokens = tokenize(req.content)
 
             term_frequencies = {}
             for token in tokens:

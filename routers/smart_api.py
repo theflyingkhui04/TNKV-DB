@@ -8,6 +8,7 @@ from core.search.ranker import cosine_similarity, top_k_minheap
 
 from core.smart.spell_checker import correct_query
 from core.smart.rocchio import expand_query
+from core.search.utils import extract_snippet
 
 router = APIRouter(prefix="/smart", tags=["smart"])
 
@@ -15,10 +16,12 @@ router = APIRouter(prefix="/smart", tags=["smart"])
 def smart_search(req: SmartSearchRequest):
     start_time = time.time()
     
-    vectorizer = get_vectorizer("manual")
+    ranker_algo = req.ranker if req.ranker != "tfidf" else "manual"
+    vectorizer = get_vectorizer(ranker_algo)
     vectorizer.build_vectors(global_index)
     
-    query_tokens = req.query.lower().split()
+    from core.search.utils import tokenize
+    query_tokens = tokenize(req.query)
     corrected_query_str = None
     
     if req.use_spell_check:
@@ -42,7 +45,10 @@ def smart_search(req: SmartSearchRequest):
     for doc_id, score in results:
         doc = global_index.documents.get(doc_id)
         content = doc.content if doc else None
-        items.append(SearchResultItem(doc_id=doc_id, score=round(score, 4), content=content))
+        
+        snippet = extract_snippet(content, query_tokens) if content else None
+        
+        items.append(SearchResultItem(doc_id=doc_id, score=round(score, 4), content=content, snippet=snippet))
         
     elapsed = (time.time() - start_time) * 1000
     

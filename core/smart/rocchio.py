@@ -45,5 +45,7 @@ def expand_query(
             
     if not row_indices:
         return q_vector
-    relevant_vectors = vectorizer.tfidf_matrix[row_indices]
+        
+    matrix_csr = vectorizer.tfidf_matrix.tocsr()
+    relevant_vectors = matrix_csr[row_indices]
     return apply_rocchio(q_vector, relevant_vectors, alpha, beta)
