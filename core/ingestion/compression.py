@@ -1,94 +1,29 @@
-"""
-core/ingestion/compression.py
-
-Cài đặt Index Compression (Chương 3):
-  1. Gap Encoding: chuyển [100, 105, 115] → [100, 5, 10]
-  2. Variable Byte (VB) Encoding: nén mỗi số gap thành byte sequence
-
-Lợi ích:
-  - Giảm 70-80% dung lượng lưu trữ postings list
-  - Tăng tốc độ đọc từ đĩa (I/O bound improvement)
-  - Giữ nguyên độ chính xác (lossless compression)
-
-Ứng dụng thực tế:
-  - Inverted Index lưu postings dưới dạng nén
-  - Khi search, giải nén on-the-fly
-"""
-
 from typing import List, Tuple
 
-
-# ===========================================================================
 # 1. GAP ENCODING
-# ===========================================================================
-
 def gap_encode(doc_ids: List[int]) -> List[int]:
-    """
-    Mã hóa khoảng cách (Gap Encoding).
-
-    Chuyển danh sách DocID tăng dần thành danh sách các khoảng cách.
-
-    Ví dụ:
-        Input:  [100, 105, 115, 125]
-        Output: [100, 5, 10, 10]
-        
-        Giải thích:
-        - Phần tử đầu tiên là 100 (doc_id gốc)
-        - 105 - 100 = 5 (gap)
-        - 115 - 105 = 10 (gap)
-        - 125 - 115 = 10 (gap)
-
-    Args:
-        doc_ids: Danh sách doc_id **đã sắp xếp tăng dần** (integer)
-
-    Returns:
-        Danh sách gaps (phần tử đầu là doc_id gốc, các phần tử sau là gaps)
-    """
     if not doc_ids:
         return []
-
-    gaps: List[int] = [doc_ids[0]]  # Phần tử đầu tiên (base)
-
+    gaps: List[int] = [doc_ids[0]]
     for i in range(1, len(doc_ids)):
         gap = doc_ids[i] - doc_ids[i - 1]
         gaps.append(gap)
-
     return gaps
 
 
 def gap_decode(gaps: List[int]) -> List[int]:
-    """
-    Giải mã khoảng cách (Gap Decoding).
-
-    Chuyển danh sách gaps ngược lại thành danh sách DocID ban đầu.
-
-    Ví dụ:
-        Input:  [100, 5, 10, 10]
-        Output: [100, 105, 115, 125]
-
-    Args:
-        gaps: Danh sách gaps (phần tử đầu là base, các phần tử sau là gaps)
-
-    Returns:
-        Danh sách doc_id gốc (đã sắp xếp tăng dần)
-    """
     if not gaps:
         return []
-
-    doc_ids: List[int] = [gaps[0]]  # Bắt đầu với base
-
+    doc_ids: List[int] = [gaps[0]]
     for i in range(1, len(gaps)):
         last_doc_id = doc_ids[-1]
         gap = gaps[i]
         doc_ids.append(last_doc_id + gap)
-
     return doc_ids
 
 
-# ===========================================================================
-# 2. VARIABLE BYTE (VB) ENCODING
-# ===========================================================================
 
+# 2. VARIABLE BYTE ENCODING
 def vb_encode(numbers: List[int]) -> bytes:
     """
     Mã hóa Variable Byte (VB).
@@ -178,9 +113,9 @@ def vb_decode(data: bytes) -> List[int]:
     return numbers
 
 
-# ===========================================================================
+
 # 3. HELPER: Compress & Decompress PostingsList
-# ===========================================================================
+
 
 def compress_postings(doc_ids: List[int]) -> Tuple[bytes, int]:
     """
@@ -223,9 +158,9 @@ def decompress_postings(compressed_bytes: bytes, expected_count: int) -> List[in
     return doc_ids
 
 
-# ===========================================================================
+
 # 4. STATISTICS
-# ===========================================================================
+
 
 def compression_ratio(original_size: int, compressed_size: int) -> float:
     """
