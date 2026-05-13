@@ -32,7 +32,7 @@ def clear_database():
     from core.ingestion.indexer import global_index
     global_index.clear()
     
-    # Remove files from disk (optional but good for completely dropping DB)
+    # Remove files from disk
     import os
     storage_dir = "storage"
     if os.path.exists(storage_dir):

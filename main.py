@@ -13,7 +13,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # --- Sự kiện Shutdown ---
     print("Đang tắt TNKV DB. Đang lưu trạng thái cuối cùng xuống đĩa...")
     global_index.save_to_disk("storage")
     print("Đã lưu thành công.")
@@ -28,7 +27,7 @@ app = FastAPI(
 # Cấu hình CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Cho phép tất cả origin, có thể thay bằng ["http://localhost:3000"] cho production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
