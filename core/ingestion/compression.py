@@ -1,120 +1,31 @@
-"""
-core/ingestion/compression.py
-
-Cài đặt Index Compression (Chương 3):
-  1. Gap Encoding: chuyển [100, 105, 115] → [100, 5, 10]
-  2. Variable Byte (VB) Encoding: nén mỗi số gap thành byte sequence
-
-Lợi ích:
-  - Giảm 70-80% dung lượng lưu trữ postings list
-  - Tăng tốc độ đọc từ đĩa (I/O bound improvement)
-  - Giữ nguyên độ chính xác (lossless compression)
-
-Ứng dụng thực tế:
-  - Inverted Index lưu postings dưới dạng nén
-  - Khi search, giải nén on-the-fly
-"""
-
 from typing import List, Tuple
 
-
-# ===========================================================================
 # 1. GAP ENCODING
-# ===========================================================================
-
 def gap_encode(doc_ids: List[int]) -> List[int]:
-    """
-    Mã hóa khoảng cách (Gap Encoding).
-
-    Chuyển danh sách DocID tăng dần thành danh sách các khoảng cách.
-
-    Ví dụ:
-        Input:  [100, 105, 115, 125]
-        Output: [100, 5, 10, 10]
-        
-        Giải thích:
-        - Phần tử đầu tiên là 100 (doc_id gốc)
-        - 105 - 100 = 5 (gap)
-        - 115 - 105 = 10 (gap)
-        - 125 - 115 = 10 (gap)
-
-    Args:
-        doc_ids: Danh sách doc_id **đã sắp xếp tăng dần** (integer)
-
-    Returns:
-        Danh sách gaps (phần tử đầu là doc_id gốc, các phần tử sau là gaps)
-    """
     if not doc_ids:
         return []
-
-    gaps: List[int] = [doc_ids[0]]  # Phần tử đầu tiên (base)
-
+    gaps: List[int] = [doc_ids[0]]
     for i in range(1, len(doc_ids)):
         gap = doc_ids[i] - doc_ids[i - 1]
         gaps.append(gap)
-
     return gaps
 
 
 def gap_decode(gaps: List[int]) -> List[int]:
-    """
-    Giải mã khoảng cách (Gap Decoding).
-
-    Chuyển danh sách gaps ngược lại thành danh sách DocID ban đầu.
-
-    Ví dụ:
-        Input:  [100, 5, 10, 10]
-        Output: [100, 105, 115, 125]
-
-    Args:
-        gaps: Danh sách gaps (phần tử đầu là base, các phần tử sau là gaps)
-
-    Returns:
-        Danh sách doc_id gốc (đã sắp xếp tăng dần)
-    """
     if not gaps:
         return []
-
-    doc_ids: List[int] = [gaps[0]]  # Bắt đầu với base
-
+    doc_ids: List[int] = [gaps[0]]
     for i in range(1, len(gaps)):
         last_doc_id = doc_ids[-1]
         gap = gaps[i]
         doc_ids.append(last_doc_id + gap)
-
     return doc_ids
 
 
-# ===========================================================================
-# 2. VARIABLE BYTE (VB) ENCODING
-# ===========================================================================
 
+# 2. VARIABLE BYTE ENCODING
 def vb_encode(numbers: List[int]) -> bytes:
-    """
-    Mã hóa Variable Byte (VB).
-
-    Mỗi số được nén thành một chuỗi byte:
-    - Bit cao nhất (bit 7) là continuation bit (1 = còn byte tiếp, 0 = kết thúc)
-    - Bit 6-0 (7 bits) chứa dữ liệu
-
-    Ví dụ với số 5:
-        5 = 0b101
-        Nhỏ hơn 128, nên vào 1 byte:
-        0b00000101 = 0x05
-
-    Ví dụ với số 300 = 0b100101100:
-        Cần 2 bytes:
-        - Byte 1: 0b10000010 = 0x82 (continuation=1, data=0000010)
-        - Byte 2: 0b00101100 = 0x2C (continuation=0, data=0101100)
-
-    Args:
-        numbers: Danh sách các số (thường là gaps sau gap encoding)
-
-    Returns:
-        Chuỗi byte đã nén
-    """
     result: bytearray = bytearray()
-
     for num in numbers:
         if num < 0:
             raise ValueError(f"Không hỗ trợ số âm: {num}")
@@ -124,7 +35,7 @@ def vb_encode(numbers: List[int]) -> bytes:
 
         # Lấy 7 bits từ dưới lên trên
         while num > 0:
-            bytes_list.append(num & 0x7F)  # Lấy 7 bits thấp
+            bytes_list.append(num & 0x7F)
             num >>= 7
 
         # Nếu số là 0, thêm 1 byte 0x00
@@ -145,17 +56,6 @@ def vb_encode(numbers: List[int]) -> bytes:
 
 
 def vb_decode(data: bytes) -> List[int]:
-    """
-    Giải mã Variable Byte (VB).
-
-    Đọc byte stream và extract lại danh sách các số.
-
-    Args:
-        data: Chuỗi byte đã nén bởi vb_encode()
-
-    Returns:
-        Danh sách các số ban đầu
-    """
     numbers: List[int] = []
     current_num = 0
     i = 0
@@ -177,128 +77,20 @@ def vb_decode(data: bytes) -> List[int]:
 
     return numbers
 
-
-# ===========================================================================
-# 3. HELPER: Compress & Decompress PostingsList
-# ===========================================================================
-
+# Nén postings list
 def compress_postings(doc_ids: List[int]) -> Tuple[bytes, int]:
-    """
-    Nén danh sách DocID bằng Gap Encoding + Variable Byte Encoding.
-
-    Args:
-        doc_ids: Danh sách doc_id (integers) **đã sắp xếp**
-
-    Returns:
-        (compressed_bytes, original_count): bytes nén và số lượng phần tử gốc
-    """
     gaps = gap_encode(doc_ids)
     compressed = vb_encode(gaps)
     return compressed, len(doc_ids)
 
-
+# Giải nén posting list
 def decompress_postings(compressed_bytes: bytes, expected_count: int) -> List[int]:
-    """
-    Giải nén danh sách DocID từ compressed format.
-
-    Args:
-        compressed_bytes: Bytes đã nén bởi compress_postings()
-        expected_count: Số lượng phần tử gốc (dùng để verify)
-
-    Returns:
-        Danh sách doc_id gốc
-
-    Raises:
-        ValueError: Nếu số phần tử sau giải nén không khớp expected_count
-    """
     gaps = vb_decode(compressed_bytes)
     doc_ids = gap_decode(gaps)
 
     if len(doc_ids) != expected_count:
         raise ValueError(
-            f"Decompression mismatch: got {len(doc_ids)} items, "
-            f"expected {expected_count}"
+            f"Không đúng số lượng phần tử: nén {len(doc_ids)} items, "
+            f"mong đợi {expected_count}"
         )
-
     return doc_ids
-
-
-# ===========================================================================
-# 4. STATISTICS
-# ===========================================================================
-
-def compression_ratio(original_size: int, compressed_size: int) -> float:
-    """
-    Tính tỉ lệ nén.
-
-    Args:
-        original_size: Kích thước gốc (bytes)
-        compressed_size: Kích thước sau nén (bytes)
-
-    Returns:
-        Tỉ lệ nén (0 = không nén, 1 = nén hoàn toàn)
-    """
-    if original_size == 0:
-        return 0.0
-    return 1.0 - (compressed_size / original_size)
-
-
-if __name__ == "__main__":
-    # ===== TEST GAP ENCODING =====
-    print("=" * 70)
-    print("TEST 1: Gap Encoding & Decoding")
-    print("=" * 70)
-
-    doc_ids = [100, 105, 115, 125, 130]
-    print(f"Original: {doc_ids}")
-
-    gaps = gap_encode(doc_ids)
-    print(f"Gaps:     {gaps}")
-
-    decoded = gap_decode(gaps)
-    print(f"Decoded:  {decoded}")
-    assert decoded == doc_ids, "Gap encoding/decoding mismatch!"
-    print("✅ Gap encoding/decoding OK\n")
-
-    # ===== TEST VB ENCODING =====
-    print("=" * 70)
-    print("TEST 2: Variable Byte Encoding & Decoding")
-    print("=" * 70)
-
-    test_numbers = [5, 100, 300, 2000, 1000000]
-    print(f"Original: {test_numbers}")
-
-    vb_encoded = vb_encode(test_numbers)
-    print(f"Encoded (hex): {vb_encoded.hex()}")
-    print(f"Encoded size: {len(vb_encoded)} bytes")
-
-    vb_decoded = vb_decode(vb_encoded)
-    print(f"Decoded: {vb_decoded}")
-    assert vb_decoded == test_numbers, "VB encoding/decoding mismatch!"
-    print("✅ Variable Byte encoding/decoding OK\n")
-
-    # ===== TEST FULL COMPRESSION =====
-    print("=" * 70)
-    print("TEST 3: Full Compression Pipeline")
-    print("=" * 70)
-
-    doc_ids_large = list(range(1, 1001, 7))  # [1, 8, 15, ..., 994]
-    print(f"DocID list size: {len(doc_ids_large)}")
-
-    # Original size (4 bytes per int32)
-    original_size = len(doc_ids_large) * 4
-    print(f"Original size: {original_size} bytes")
-
-    # Compress
-    compressed, count = compress_postings(doc_ids_large)
-    print(f"Compressed size: {len(compressed)} bytes")
-    print(f"Compression ratio: {compression_ratio(original_size, len(compressed)):.1%}")
-
-    # Decompress
-    decompressed = decompress_postings(compressed, count)
-    assert decompressed == doc_ids_large, "Full compression pipeline mismatch!"
-    print("✅ Full compression pipeline OK\n")
-
-    print("=" * 70)
-    print("✨ All tests passed!")
-    print("=" * 70)

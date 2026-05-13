@@ -1,5 +1,0 @@
-[
-  {"query_id": "Q1", "relevant_docs": ["D01", "D02", "D07"]},
-  {"query_id": "Q2", "relevant_docs": ["D03", "D04"]},
-  {"query_id": "Q3", "relevant_docs": ["D05", "D06"]}
-]
